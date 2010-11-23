@@ -1,0 +1,4 @@
+lcdinit
+fatload mmc 0 0 /script/uzImage.bin
+setenv bootargs mem=109M root=/dev/mmcblk0p2 init=/init console=ttyS0,115200
+bootm 0
