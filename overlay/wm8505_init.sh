@@ -40,5 +40,15 @@ done
 # *** calibrate the touchscreen
 /system/bin/touchpad_init
 
+# *** install busybox if it hasn't been installed
+if ! [ -e /data/busybox/sh ]; then
+  cd /data/busybox/
+  ./busybox --install
+fi
+
 # *** enable swap
-## TBA
+swapon /dev/block/mmcblk0p3
+# (slatedroid guys seem to think these are good swappiness levels, so we'll do them too!)
+echo 15 > /proc/sys/vm/swappiness 
+sysctl -w vm.swappiness=40
+

@@ -19,6 +19,9 @@ Enjoy,
 
 - Angus (aka projectgus)
 
+NB: overlay/data/busybox/busybox is "benno's" precompiled Android busybox from his blog, details & source available at that link:
+http://benno.id.au/blog/2007/11/14/android-busybox
+
 
 ************
 KNOWN ISSUES
@@ -39,6 +42,10 @@ KNOWN ISSUES
 
 * Unstable, unreliable, hacky and horribly slow. ;)
 
+* Uses horribly hack-mixup kernel, kernel is built from "my" copy of VIA's tree with
+  make -j8 ubin modules ARCH=arm CROSS_COMPILE=arm-linux-gnueabi- KERNELRELEASE=2.6.29-00236-g4f8dbbb-dirty
+   ... then modules are partially taken from existing Android distros, as some are different/missing. Eww.
+
 
 ****
 TODO
@@ -48,7 +55,6 @@ TODO
 
 * Change from using 'generic' board config to a specific wm8505 config
 * Use BUILD_ flags to disable unnecessary Froyo features
-* Add busybox for a less lame console.
 * Test Wifi properly
 * Test audio (will probably not work.)
 * Test battery level tracking.
