@@ -57,7 +57,7 @@ loglevel 3
     # 5.0 %
     write /dev/cpuctl/bg_non_interactive/cpu.shares 52
 
-# mount mtd partitions
+    # mount mtd partitions
     # Mount /system rw first to give the filesystem a chance to save a checkpoint
     #mount yaffs2 mtd@system /system
     #mount yaffs2 mtd@system /system ro remount
@@ -106,9 +106,22 @@ loglevel 3
     mkdir /data/misc/vpn 0770 system system
     mkdir /data/misc/vpn/profiles 0770 system system
     # give system access to wpa_supplicant.conf for backup and restore
+    mkdir /system/etc/wifi 0770 wifi wifi 
+    chmod 0770 /system/etc/wifi 
+    chmod 0660 /system/etc/wifi/wpa_supplicant.conf 
+    chown wifi wifi /system/etc/wifi/
+    chown wifi wifi /system/etc/wifi/wpa_supplicant.conf 
     mkdir /data/misc/wifi 0770 wifi wifi
+    mkdir /data/misc/wifi/sockets 0770 wifi wifi
     chmod 0770 /data/misc/wifi
     chmod 0660 /data/misc/wifi/wpa_supplicant.conf
+
+    # wpa_supplicant socket (unix socket mode) 
+#    mkdir /data/system/wpa_supplicant 0771 wifi wifi 
+#    chmod 0771 /data/system/wpa_supplicant 
+#    chown wifi wifi /data/system/wpa_supplicant 
+    rm -r /data/system/wpa_supplicant
+
     mkdir /data/local 0771 shell shell
     mkdir /data/local/tmp 0771 shell shell
     mkdir /data/data 0771 system system
@@ -233,6 +246,12 @@ on boot
 service console /system/bin/sh
     console
 
+service wm8505init /wm8505_init.sh
+    oneshot
+
+service usbgadget /lib/modules/usbgadget.sh
+      oneshot
+
 # adbd is controlled by the persist.service.adb.enable system property
 service adbd /sbin/adbd
     disabled
@@ -297,37 +316,37 @@ service dbus /system/bin/dbus-daemon --system --nofork
     user bluetooth
     group bluetooth net_bt_admin
 
-service bluetoothd /system/bin/bluetoothd -n
-    socket bluetooth stream 660 bluetooth bluetooth
-    socket dbus_bluetooth stream 660 bluetooth bluetooth
-    # init.rc does not yet support applying capabilities, so run as root and
-    # let bluetoothd drop uid to bluetooth with the right linux capabilities
-    group bluetooth net_bt_admin misc
-    disabled
+# service bluetoothd /system/bin/bluetoothd -n
+#     socket bluetooth stream 660 bluetooth bluetooth
+#     socket dbus_bluetooth stream 660 bluetooth bluetooth
+#     # init.rc does not yet support applying capabilities, so run as root and
+#     # let bluetoothd drop uid to bluetooth with the right linux capabilities
+#     group bluetooth net_bt_admin misc
+#     disabled
 
-service hfag /system/bin/sdptool add --channel=10 HFAG
-    user bluetooth
-    group bluetooth net_bt_admin
-    disabled
-    oneshot
+# service hfag /system/bin/sdptool add --channel=10 HFAG
+#     user bluetooth
+#     group bluetooth net_bt_admin
+#     disabled
+#     oneshot
 
-service hsag /system/bin/sdptool add --channel=11 HSAG
-    user bluetooth
-    group bluetooth net_bt_admin
-    disabled
-    oneshot
+# service hsag /system/bin/sdptool add --channel=11 HSAG
+#     user bluetooth
+#     group bluetooth net_bt_admin
+#     disabled
+#     oneshot
 
-service opush /system/bin/sdptool add --channel=12 OPUSH
-    user bluetooth
-    group bluetooth net_bt_admin
-    disabled
-    oneshot
+# service opush /system/bin/sdptool add --channel=12 OPUSH
+#     user bluetooth
+#     group bluetooth net_bt_admin
+#     disabled
+#     oneshot
 
-service pbap /system/bin/sdptool add --channel=19 PBAP
-    user bluetooth
-    group bluetooth net_bt_admin
-    disabled
-    oneshot
+# service pbap /system/bin/sdptool add --channel=19 PBAP
+#     user bluetooth
+#     group bluetooth net_bt_admin
+#     disabled
+#     oneshot
 
 service installd /system/bin/installd
     socket installd stream 600 system system
@@ -358,3 +377,12 @@ service dumpstate /system/bin/dumpstate -s
     socket dumpstate stream 0660 shell log
     disabled
     oneshot
+
+service wpa_supplicant /system/bin/wpa_supplicant -dd -Dwext -ira0 -c/system/etc/wifi/wpa_supplicant.conf
+    group system wifi inet dhcp
+    socket wpa_ra0 dgram 660 wifi wifi
+    disabled
+    oneshot
+
+
+
