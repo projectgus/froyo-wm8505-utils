@@ -1,0 +1,69 @@
+These are some rough scripts I found useful bringing up a hacky Froyo
+(Android 2.2) on my M001:
+
+* build_install.sh - script to build an SD card image.
+* overlay/ - files to overlay over the default AOSP source tree.
+* script/ - script directory for FAT partition
+* patches/ - patches to be applied manually to the AOSP tree, to get things to work (read patches/README).
+
+You'll need linux w/ mkimage installed in order to use build_install.sh.
+
+In this form, these scripts should allow you to take an AOSP source
+tree and make a boot-from-SD-card Froyo install. I think it would be a
+good base script for making an Eken installer SD card image, as well.
+
+Please do whatever you want with it, but -please- share anything you
+find. The only way to move forward is by working together.
+
+Enjoy,
+
+- Angus (aka projectgus)
+
+
+************
+KNOWN ISSUES
+************
+
+* No video acceleration (not even double-buffering)
+
+* No touchscreen calibration 
+  (comes with my M001 calibration, copy /data/wmt/touchcal to /system/etc/touchcal to bring yours over.)
+
+* No suspend/resume (same as old firmware.)
+
+* No music player (as you're booting from the SD card, Android doesn't detect one for media.)
+
+* Wifi is suspect (please test.)
+
+* Some apps may not work properly due to the graphics mode being set at 32-bit color not 16-bit.
+
+* Unstable, unreliable, hacky and horribly slow. ;)
+
+
+****
+TODO
+****
+
+(This is a massive list atm, this is a very rough hack!)
+
+* Change from using 'generic' board config to a specific wm8505 config
+* Use BUILD_ flags to disable unnecessary Froyo features
+* Add busybox for a less lame console.
+* Test Wifi properly
+* Test audio (will probably not work.)
+* Test battery level tracking.
+* Test SetCPU (should work.)
+* Port or recreate the touchscreen calibration app.
+* Make a proper installer package instead of boot-from-SD.
+* Disable 16Mb VPP "memory block" allocation (I think does nothing atm.)
+* Screen rotation support.
+* Double-buffering support (default method doesn't work, but may be possible.)
+* Graphics acceleration support (???)
+* Move from binary-only components (wifi module, etc.) to OSS ones.
+
+Kernel-side:
+* Enable double-buffering
+* Apply compcache patches for "ramzswap"
+* Suspend/Resume support
+* Work out how to support RGB565 16bpp instead of forcing 32bpp.
+

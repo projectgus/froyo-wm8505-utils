@@ -1,0 +1,14 @@
+project frameworks/base/
+diff --git a/services/java/com/android/server/connectivity/Tethering.java b/services/java/com/android/server/connectivity/Tethering.java
+index b29f875..e657d80 100644
+--- a/services/java/com/android/server/connectivity/Tethering.java
++++ b/services/java/com/android/server/connectivity/Tethering.java
+@@ -440,7 +440,6 @@ public class Tethering extends INetworkManagementEventObserver.Stub {
+                 mTetherMasterSM.sendMessage(TetherMasterSM.CMD_UPSTREAM_CHANGED);
+             } else if (action.equals(Intent.ACTION_BOOT_COMPLETED)) {
+                 mBooted = true;
+-                updateUsbStatus();
+             }
+         }
+     }
+

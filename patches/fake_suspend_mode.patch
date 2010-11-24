@@ -1,0 +1,56 @@
+project hardware/libhardware_legacy/
+diff --git a/power/power.c b/power/power.c
+index 8dea0a2..123b9d3 100644
+--- a/power/power.c
++++ b/power/power.c
+@@ -158,6 +158,38 @@ set_last_user_activity_timeout(int64_t delay)
+     }
+ }
+ 
++#define WMT_BRIGHTNESS "/sys/class/leds/lcd-backlight/brightness"
++#define BUF_LEN 40
++static char last_brightness[BUF_LEN] = "255\n";
++const static char * zero_brightness = "0\n";
++
++void set_wmt_brightness(int on)
++{
++  int fd = open(WMT_BRIGHTNESS, O_RDWR);
++  if(fd < 0) {
++	 LOGW("*** failed to open %s", WMT_BRIGHTNESS);
++	 return;
++  }
++  
++  if(on) {
++	 LOGI("*** setting brightness to %s", last_brightness);
++	 write(fd, last_brightness, strlen(last_brightness));
++  } else {
++	 memset(last_brightness, 0, BUF_LEN);
++	 read(fd, last_brightness, BUF_LEN);
++	 close(fd);
++	 fd = open(WMT_BRIGHTNESS, O_WRONLY); // reopen appears necessary
++	 if(fd < 0) {
++		LOGW("*** failed to reopen %s", WMT_BRIGHTNESS);
++		return;
++	 }
++	 write(fd, zero_brightness, strlen(zero_brightness));
++	 LOGI("*** set brightness from %s to 0", last_brightness);
++  }
++  close(fd);
++}
++
++
+ int
+ set_screen_state(int on)
+ {
+@@ -165,6 +197,11 @@ set_screen_state(int on)
+ 
+     LOGI("*** set_screen_state %d", on);
+ 
++	 set_wmt_brightness(on);
++	 if(!on) {
++		LOGW("*** suspend mode not supported by WMT kernel. Skipping");
++		return 0;
++	 }
+     initialize_fds();
+ 
+     //LOGI("go_to_sleep eventTime=%lld now=%lld g_error=%s\n", eventTime,

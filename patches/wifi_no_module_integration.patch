@@ -1,0 +1,55 @@
+project hardware/libhardware_legacy/
+diff --git a/wifi/wifi.c b/wifi/wifi.c
+index b9365a4..7989739 100644
+--- a/wifi/wifi.c
++++ b/wifi/wifi.c
+@@ -74,38 +74,13 @@ static const char MODULE_FILE[]         = "/proc/modules";
+ 
+ static int insmod(const char *filename, const char *args)
+ {
+-    void *module;
+-    unsigned int size;
+-    int ret;
+-
+-    module = load_file(filename, &size);
+-    if (!module)
+-        return -1;
+-
+-    ret = init_module(module, size, args);
+-
+-    free(module);
+-
+-    return ret;
++    return 0;
+ }
+ 
+ static int rmmod(const char *modname)
+ {
+-    int ret = -1;
+-    int maxtry = 10;
+-
+-    while (maxtry-- > 0) {
+-        ret = delete_module(modname, O_NONBLOCK | O_EXCL);
+-        if (ret < 0 && errno == EAGAIN)
+-            usleep(500000);
+-        else
+-            break;
+-    }
++    return 0;
+ 
+-    if (ret != 0)
+-        LOGD("Unable to unload driver module \"%s\": %s\n",
+-             modname, strerror(errno));
+-    return ret;
+ }
+ 
+ static int check_driver_loaded() {
+@@ -123,6 +98,8 @@ static int check_driver_loaded() {
+      * over from a previous manual shutdown or a runtime
+      * crash.
+      */
++    return 1;
++
+     if ((proc = fopen(MODULE_FILE, "r")) == NULL) {
+         LOGW("Could not open %s: %s", MODULE_FILE, strerror(errno));
+         property_set(DRIVER_PROP_NAME, "unloaded");

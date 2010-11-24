@@ -1,0 +1,31 @@
+
+project build/
+diff --git a/target/board/generic/BoardConfig.mk b/target/board/generic/BoardConfig.mk
+index f630dac..8fb0f2a 100644
+--- a/target/board/generic/BoardConfig.mk
++++ b/target/board/generic/BoardConfig.mk
+@@ -10,5 +10,9 @@ TARGET_CPU_ABI := armeabi
+ HAVE_HTC_AUDIO_DRIVER := true
+ BOARD_USES_GENERIC_AUDIO := true
+ 
++#WPA_SUPPLICANT_VERSION := VER_0_6_X
++BOARD_WPA_SUPPLICANT_DRIVER := AWEXT
++
+ # Set /system/bin/sh to mksh, not ash, to test the transition.
+ TARGET_SHELL := mksh
++
+diff --git a/target/board/generic/system.prop b/target/board/generic/system.prop
+index f2424c9..463caa8 100644
+--- a/target/board/generic/system.prop
++++ b/target/board/generic/system.prop
+@@ -4,3 +4,10 @@
+ 
+ rild.libpath=/system/lib/libreference-ril.so
+ rild.libargs=-d /dev/ttyS0
++wifi.interface=ra0
++
++# Time between scans in seconds. Keep it high to minimize battery drain.
++# This only affects the case in which there are remembered access points,
++# but none are in range.
++wifi.supplicant_scan_interval=15
++

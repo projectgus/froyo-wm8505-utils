@@ -1,0 +1,28 @@
+project external/wpa_supplicant/
+diff --git a/Android.mk b/Android.mk
+index 09a73eb..a3691c2 100644
+--- a/common.c
++++ b/common.c
+@@ -20,7 +20,7 @@
+ #ifdef CONFIG_DEBUG_FILE
+ static FILE *out_file = NULL;
+ #endif /* CONFIG_DEBUG_FILE */
+-int wpa_debug_level = MSG_INFO;
++int wpa_debug_level = MSG_DEBUG;
+ int wpa_debug_show_keys = 0;
+ int wpa_debug_timestamp = 0;
+ 
+diff --git a/common.h b/common.h
+index 8c560bc..5c5574c 100644
+--- a/common.h
++++ b/common.h
+@@ -270,7 +270,7 @@ void android_printf(int level, char *format, ...);
+ 
+ #define wpa_printf(level, ...) \
+         do {                                            \
+-            if ((level) >= MSG_INFO) {                  \
++            if ((level) >= MSG_DEBUG) {                  \
+                 android_printf((level), __VA_ARGS__);   \
+             }                                           \
+         } while (0)
+

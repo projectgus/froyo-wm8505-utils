@@ -1,0 +1,52 @@
+project hardware/libhardware/
+diff --git a/modules/gralloc/framebuffer.cpp b/modules/gralloc/framebuffer.cpp
+index 0195103..e1cd91e 100644
+--- a/modules/gralloc/framebuffer.cpp
++++ b/modules/gralloc/framebuffer.cpp
+@@ -43,7 +43,7 @@
+ /*****************************************************************************/
+ 
+ // numbers of buffers for page flipping
+-#define NUM_BUFFERS 2
++#define NUM_BUFFERS 1
+ 
+ 
+ enum {
+@@ -174,6 +174,7 @@ int mapFrameBufferLocked(struct private_module_t* module)
+     /*
+      * Explicitly request 5/6/5
+      */
++	 /*
+     info.bits_per_pixel = 16;
+     info.red.offset     = 11;
+     info.red.length     = 5;
+@@ -183,6 +184,18 @@ int mapFrameBufferLocked(struct private_module_t* module)
+     info.blue.length    = 5;
+     info.transp.offset  = 0;
+     info.transp.length  = 0;
++	 */
++    info.bits_per_pixel = 32;
++    info.red.offset     = 24;
++    info.red.length     = 8;
++    info.green.offset   = 16;
++    info.green.length   = 8;
++    info.blue.offset    = 0;
++    info.blue.length    = 8;
++    info.transp.offset  = 24;
++    info.transp.length  = 0;
++
++
+ 
+     /*
+      * Request NUM_BUFFERS screens (at lest 2 for page flipping)
+@@ -347,7 +360,8 @@ int fb_device_open(hw_module_t const* module, const char* name,
+             const_cast<uint32_t&>(dev->device.width) = m->info.xres;
+             const_cast<uint32_t&>(dev->device.height) = m->info.yres;
+             const_cast<int&>(dev->device.stride) = stride;
+-            const_cast<int&>(dev->device.format) = HAL_PIXEL_FORMAT_RGB_565;
++				//            const_cast<int&>(dev->device.format) = HAL_PIXEL_FORMAT_RGB_565;
++				const_cast<int&>(dev->device.format) = HAL_PIXEL_FORMAT_BGRA_8888;	
+             const_cast<float&>(dev->device.xdpi) = m->xdpi;
+             const_cast<float&>(dev->device.ydpi) = m->ydpi;
+             const_cast<float&>(dev->device.fps) = m->fps;
+
