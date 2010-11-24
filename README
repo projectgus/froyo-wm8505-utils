@@ -15,6 +15,14 @@ good base script for making an Eken installer SD card image, as well.
 Please do whatever you want with it, but -please- share anything you
 find. The only way to move forward is by working together.
 
+BTW, I know that having this pile of scripts is a horrible horrible
+hack, and most of it could be integrated directly into the Android
+tree. When I first did this, I didn't know if it would work at all, so
+doing it this way made it reproducible without requiring major effort
+on my part. If this becomes a real effort then we should -undoubtedly-
+move into a proper custom Android tree and use their build process
+for everything.
+
 Enjoy,
 
 - Angus (aka projectgus)
