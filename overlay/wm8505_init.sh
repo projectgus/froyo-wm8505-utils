@@ -47,7 +47,7 @@ if ! [ -e /data/busybox/sh ]; then
 fi
 
 # *** enable swap
-swapon /dev/block/mmcblk0p3
+swapon /dev/block/mmcblk0p2
 # (slatedroid guys seem to think these are good swappiness levels, so we'll do them too!)
 echo 15 > /proc/sys/vm/swappiness 
 sysctl -w vm.swappiness=40

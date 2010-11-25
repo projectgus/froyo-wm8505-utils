@@ -1,5 +1,0 @@
-lcdinit
-fatload mmc 0 0 /script/uzImage.bin
-setenv bootargs mem=109M root=/dev/mmcblk0p2 init=/init console=ttyS0,115200
-textout -1 -1 "Booting from SD card, please be patient..." c751ac1;
-bootm 0

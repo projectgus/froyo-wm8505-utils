@@ -1,12 +1,13 @@
 These are some rough scripts I found useful bringing up a hacky Froyo
 (Android 2.2) on my M001:
 
-* build_install.sh - script to build an SD card image.
+* build_sd_boot.sh - script to build an SD card which is mounted.
+* build_sd_boot_image.sh - script to use an SD card to build images for distribution
 * overlay/ - files to overlay over the default AOSP source tree.
 * script/ - script directory for FAT partition
 * patches/ - patches to be applied manually to the AOSP tree, to get things to work (read patches/README).
 
-You'll need linux w/ mkimage installed in order to use build_install.sh.
+You'll need linux w/ mkimage installed in order to use build_sd_boot.sh.
 
 In this form, these scripts should allow you to take an AOSP source
 tree and make a boot-from-SD-card Froyo install. I think it would be a
