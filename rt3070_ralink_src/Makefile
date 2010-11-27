@@ -1,8 +1,8 @@
-RT28xx_MODE = STA
+	RT28xx_MODE = STA
 
 TARGET = LINUX
 
-CHIPSET = 3370
+CHIPSET = 3070
 
 #OS ABL - YES or NO
 OSABL = NO
@@ -140,11 +140,11 @@ endif
 
 ifeq ($(PLATFORM),PC)
 # Linux 2.6
-LINUX_SRC = /lib/modules/$(shell uname -r)/build
+LINUX_SRC = ../kernel_wm8505/
 # Linux 2.4 Change to your local setting
 #LINUX_SRC = /usr/src/linux-2.4
-LINUX_SRC_MODULE = /lib/modules/$(shell uname -r)/kernel/drivers/net/wireless/
-CROSS_COMPILE = 
+LINUX_SRC_MODULE = $(LINUX_SRC)/kernel/drivers/net/wireless/
+CROSS_COMPILE = arm-linux-gnueabi-
 endif
 
 ifeq ($(PLATFORM),IXP)

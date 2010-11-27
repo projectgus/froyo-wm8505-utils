@@ -27,7 +27,7 @@
 
 #include "rt_config.h"
 
-ULONG	RTDebugLevel = RT_DEBUG_TRACE;
+ULONG	RTDebugLevel = RT_DEBUG_WARN;
 
 
 #ifdef VENDOR_FEATURE4_SUPPORT

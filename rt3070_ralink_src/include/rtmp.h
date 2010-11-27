@@ -103,7 +103,7 @@ extern  UCHAR	BaSizeArray[4];
 extern UCHAR BROADCAST_ADDR[MAC_ADDR_LEN];
 extern UCHAR ZERO_MAC_ADDR[MAC_ADDR_LEN];
 extern ULONG BIT32[32];
-extern UCHAR BIT8[8];
+extern UCHAR rBIT8[8];
 extern char* CipherName[];
 extern UCHAR	 RxwiMCSToOfdmRate[12];
 extern UCHAR SNAP_802_1H[6];

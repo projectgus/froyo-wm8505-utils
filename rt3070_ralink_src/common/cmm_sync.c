@@ -554,7 +554,8 @@ VOID ScanNextChannel(
 			{
 				pAd->StaCfg.BssNr = pAd->ScanTab.BssNr;
 				pAd->StaCfg.bImprovedScan = FALSE;
-				
+				RTMP_CLEAR_FLAG(pAd, fRTMP_ADAPTER_BSS_SCAN_IN_PROGRESS);
+
 				pAd->Mlme.SyncMachine.CurrState = SYNC_IDLE;
 				Status = MLME_SUCCESS;
 				MlmeEnqueue(pAd, MLME_CNTL_STATE_MACHINE, MT2_SCAN_CONF, 2, &Status, 0);
