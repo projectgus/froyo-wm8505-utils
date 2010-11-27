@@ -9,6 +9,10 @@ echo "Powering up Wifi"
 echo out > /sys/class/gpio/gpio2/direction
 echo 1 > /sys/class/gpio/gpio2/value
 
+# Override wifi to never sleep (should change permanently in AOSP)
+setprop "wifi_sleep_policy" 2
+
+
 # *** chmod some nodes
 
 nodes=( /sys/class/leds/lcd-backlight/brightness
@@ -51,4 +55,11 @@ swapon /dev/block/mmcblk0p2
 # (slatedroid guys seem to think these are good swappiness levels, so we'll do them too!)
 echo 15 > /proc/sys/vm/swappiness 
 sysctl -w vm.swappiness=40
+
+
+# *** increase free contig memory
+# (the rt3070 driver requires lots of contiguous 8kb buffers, seems to barf
+# using default memory allocator tuning.)
+echo 2048 > /proc/sys/vm/min_free_kbytes
+echo 4 > /proc/sys/vm/min_free_order_shift
 

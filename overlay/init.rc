@@ -113,14 +113,19 @@ loglevel 3
     chown wifi wifi /system/etc/wifi/wpa_supplicant.conf 
     mkdir /data/misc/wifi 0770 wifi wifi
     mkdir /data/misc/wifi/sockets 0770 wifi wifi
+	 chown wifi wifi /data/misc/wifi
+    chown wifi wifi /data/misc/wifi/sockets/
     chmod 0770 /data/misc/wifi
     chmod 0660 /data/misc/wifi/wpa_supplicant.conf
-
-    # wpa_supplicant socket (unix socket mode) 
-#    mkdir /data/system/wpa_supplicant 0771 wifi wifi 
-#    chmod 0771 /data/system/wpa_supplicant 
-#    chown wifi wifi /data/system/wpa_supplicant 
-    rm -r /data/system/wpa_supplicant
+    mkdir /data/misc/dhcp 0770 dhcp dhcp
+	 chown dhcp dhcp /data/misc/dhcp
+    chmod 0770 /data/misc/dhcp
+    mkdir /system/etc/dhcpcd 0770 dhcp dhcp
+	 chown dhcp dhcp /system/etc/dhcpcd/dhcpcd-run-hooks
+	 chown dhcp dhcp /system/etc/dhcpcd
+	 chown dhcp dhcp /system/etc/dhcpcd/dhcpcd.conf
+    chmod 0770 /system/etc/dhcpcd
+	 chmod 0770 /system/etc/dhcpcd/dhcpcd-run-hooks
 
     mkdir /data/local 0771 shell shell
     mkdir /data/local/tmp 0771 shell shell
@@ -383,6 +388,12 @@ service wpa_supplicant /system/bin/wpa_supplicant -dd -Dawext -ira0 -c/system/et
     socket wpa_ra0 dgram 660 wifi wifi
     disabled
     oneshot
+
+service dhcpcd /system/bin/dhcpcd ra0 
+    group system dhcp 
+    disabled 
+    oneshot 
+
 
 
 
