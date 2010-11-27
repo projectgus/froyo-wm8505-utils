@@ -60,6 +60,10 @@ echo 2048 > /proc/sys/vm/min_free_kbytes
 echo 4 > /proc/sys/vm/min_free_order_shift
 
 # Override wifi to never sleep, as sleep drops link (bit of a hack)
+SETTINGSDB=/data/data/com.android.providers.settings/databases/settings.db
+while ! [ -e $SETTINGSDB ]; do
+	 sleep 1; 
+done
 echo 'insert into system ("name", "value") values ("wifi_sleep_policy", "2");' \
-	 | sqlite3 /data/data/com.android.providers.settings/databases/settings.db
+	 | sqlite3 $SETTINGSDB
 
