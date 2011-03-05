@@ -8,8 +8,7 @@ if [ "$#" -ne 3 ]; then
 	 echo "If you just want to put the firmware directly on an already-formatted"
 	 echo "SD card, use build_sd_boot instead."
 	 echo
-	 echo "You will need to run this script as root, or with sudo. It can also"
-	 echo "chew a fair bit of RAM if you use tmpfs."
+	 echo "You will need to run this script as root, or with sudo."
 	 echo
 	 echo "Usage: $0 <Path to AOSP Root> <Path to write out images> <tablet>"
 	 echo
@@ -45,9 +44,9 @@ $SCRIPTDIR/build_sd_boot.sh $AOSPDIR $FATDIR $ROOTDIR $TABLET
 mkdir -p $OUTDIR
 
 
-echo "Building empty disk image..."
+echo "Building sparse disk image..."
 set +e
-dd if=/dev/zero of=$IMG bs=1M count=$SIZE
+dd if=/dev/zero of=$IMG bs=1M skip=$SIZE count=0
 set -e
 
 
