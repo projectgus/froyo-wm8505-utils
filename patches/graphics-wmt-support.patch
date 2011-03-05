@@ -1,0 +1,910 @@
+project hardware/libhardware
+diff --git a/modules/copybit/Android.mk b/modules/copybit/Android.mk
+new file mode 100644
+index 0000000..5ec6f94
+--- /dev/null
++++ b/modules/copybit/Android.mk
+@@ -0,0 +1,30 @@
++# Copyright (C) 2008 The Android Open Source Project
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++
++LOCAL_PATH := $(call my-dir)
++
++# HAL module implemenation, not prelinked and stored in
++# hw/<OVERLAY_HARDWARE_MODULE_ID>.<ro.product.board>.so
++include $(CLEAR_VARS)
++LOCAL_PRELINK_MODULE := false
++LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
++LOCAL_SHARED_LIBRARIES := liblog libcutils
++
++LOCAL_SRC_FILES := 	\
++	copybit.cpp
++	
++LOCAL_MODULE := copybit.wmt
++LOCAL_CFLAGS:= -DLOG_TAG=\"copybit\"
++include $(BUILD_SHARED_LIBRARY)
+diff --git a/modules/copybit/copybit.cpp b/modules/copybit/copybit.cpp
+new file mode 100644
+index 0000000..956d272
+--- /dev/null
++++ b/modules/copybit/copybit.cpp
+@@ -0,0 +1,556 @@
++/*
++ * Copyright (C) 2008 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++
++#define LOG_TAG "copybit"
++
++#include <cutils/log.h>
++
++#include <linux/fb.h>
++#include <linux/fs.h>
++#include <linux/android_pmem.h>
++
++#include <stdint.h>
++#include <string.h>
++#include <unistd.h>
++#include <errno.h>
++#include <fcntl.h>
++
++#include <sys/ioctl.h>
++#include <sys/types.h>
++#include <sys/mman.h>
++
++#include <hardware/copybit.h>
++
++#include <../gralloc/gralloc_priv.h>
++
++#define GEIO_STRETCH_BLIT		_IOW(0x69, 4, void *)
++#define GEPF_FMT(cd, hm) (((cd) << 4) + (hm & 0xf))
++#define GEPF_RGB32  GEPF_FMT(3, 0)
++#define GEPF_RGB24  GEPF_FMT(2, 0) /* Reserved */
++#define GEPF_RGB16  GEPF_FMT(1, 0)
++#define GEPF_RGB555 GEPF_FMT(1, 1)
++#define GEPF_RGB454 GEPF_FMT(1, 2)
++#define GEPF_LUT8   GEPF_FMT(0, 0)
++
++#define DEBUG_COPYBIT 0
++#define FBIO_WAITFORVSYNC		_IOW ('F', 0x20, unsigned int)
++
++/******************************************************************************/
++
++#define MAX_SCALE_FACTOR    (4)
++#define MAX_DIMENSION       (1024)
++
++/******************************************************************************/
++
++/*struct geio_rotate_t {
++    uint8_t *  src;
++    uint8_t *  dst;
++    int     width;
++    int     height;
++    int     bpp;
++    int     arc;
++};*/
++
++struct ge_img_t {
++    uint32_t addr;
++    uint32_t xres;
++    uint32_t yres;
++    uint32_t xres_virtual;
++    uint32_t yres_virtual;
++    uint32_t x;
++    uint32_t y;
++    int pixelformat;
++};
++
++struct geio_blit_req {
++    ge_img_t    src;
++    ge_img_t    dst;
++    int         rotate;
++};
++
++/** State information for each device instance */
++struct copybit_context_t {
++    struct copybit_device_t device;
++    int     fd;
++    uint8_t alpha;
++    int     rotate;
++    uint32_t transform;
++};
++
++/**
++ * Common hardware methods
++ */
++
++static int open_copybit(const struct hw_module_t* module, const char* name,
++        struct hw_device_t** device);
++
++static struct hw_module_methods_t copybit_module_methods = {
++    open:  open_copybit
++};
++
++/*
++ * The COPYBIT Module
++ */
++struct copybit_module_t HAL_MODULE_INFO_SYM = {
++    common: {
++        tag: HARDWARE_MODULE_TAG,
++        version_major: 1,
++        version_minor: 0,
++        id: COPYBIT_HARDWARE_MODULE_ID,
++        name: "WMT COPYBIT Module",
++        author: "Nomad. RunServer.net",
++        methods: &copybit_module_methods
++    }
++};
++
++/******************************************************************************/
++
++/** min of int a, b */
++static inline int min(int a, int b) {
++    return (a<b) ? a : b;
++}
++
++/** max of int a, b */
++static inline int max(int a, int b) {
++    return (a>b) ? a : b;
++}
++
++/** scale each parameter by mul/div. Assume div isn't 0 */
++static inline void MULDIV(uint32_t *a, uint32_t *b, int mul, int div) {
++    if (mul != div) {
++        *a = (mul * *a) / div;
++        *b = (mul * *b) / div;
++    }
++}
++
++/** Determine the intersection of lhs & rhs store in out */
++static void intersect(struct copybit_rect_t *out,
++                      const struct copybit_rect_t *lhs,
++                      const struct copybit_rect_t *rhs) {
++    out->l = max(lhs->l, rhs->l);
++    out->t = max(lhs->t, rhs->t);
++    out->r = min(lhs->r, rhs->r);
++    out->b = min(lhs->b, rhs->b);
++}
++
++static int get_bpp(int format)
++{
++    switch(format)
++    {
++	case COPYBIT_FORMAT_RGBA_5551:
++	case COPYBIT_FORMAT_RGB_565:
++	    return 16;
++	case COPYBIT_FORMAT_RGBA_8888:
++	case COPYBIT_FORMAT_RGBX_8888:
++	case COPYBIT_FORMAT_BGRA_8888:
++	    return 32;
++        case COPYBIT_FORMAT_RGB_888:
++	    return 24;
++	default:
++	    return -1;
++    }
++}
++
++static int get_format(int format)
++{
++    switch(format)
++    {
++        case COPYBIT_FORMAT_RGBA_5551:
++            return GEPF_RGB555;
++        case COPYBIT_FORMAT_RGB_565:
++            return GEPF_RGB16;
++        case COPYBIT_FORMAT_RGBA_8888:
++        case COPYBIT_FORMAT_RGBX_8888:
++        case COPYBIT_FORMAT_BGRA_8888:
++            return GEPF_RGB32;
++        case COPYBIT_FORMAT_RGB_888:
++            return GEPF_RGB24;
++        default:
++            return -1;
++    }
++}
++
++static int set_image(ge_img_t * img, const struct copybit_image_t *rhs)
++{
++    const private_handle_t * hnd = private_handle_t::dynamicCast(rhs->handle);
++
++    int format = get_format(rhs->format);
++    if (format < 0)
++    {
++        LOGW("set_image: unsupported format %d", rhs->format);
++        return -1;
++    }
++
++    img->addr = (uint32_t)rhs->base;
++    if(hnd->flags & private_handle_t::PRIV_FLAGS_FRAMEBUFFER) // framebuffer
++        img->addr = (uint32_t)(hnd->smem_start + hnd->offset);
++    else
++    if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_PMEM) // pmem
++    {
++        img->addr = hnd->offset;
++        format |= hnd->fd << 16;
++    } else
++    {
++        LOGW("set_image: unknown image address type %d", hnd->flags);
++    }
++    // else
++//    if (hnd->fd) // ashmem
++//    {
++//        img->addr = hnd->offset;
++//        format |= hnd->fd << 16;
++//    }
++
++    img->xres_virtual   = rhs->w;//*/(rhs->w + 1) & ~1;
++    img->yres_virtual   = rhs->h;
++    img->pixelformat    = format;
++    img->x              = 0;
++    img->y              = 0;
++    img->xres           = img->xres_virtual;
++    img->yres           = img->yres_virtual;
++
++    return 0;
++}
++
++
++static inline void set_rects(
++        struct copybit_context_t *dev,
++        struct geio_blit_req *e,
++        const struct copybit_rect_t *dst,
++        const struct copybit_rect_t *src,
++        const struct copybit_rect_t *scissor)
++{
++        struct copybit_rect_t clip;
++        uint32_t H, W, h, w;
++
++        intersect(&clip, scissor, dst);
++
++        LOGD_IF(DEBUG_COPYBIT, "SRC (%d,%d) (%d,%d), DST (%d,%d), (%d,%d), "
++            "CLIP (%d,%d) (%d,%d)", src->l, src->t, src->r,
++            src->b, dst->l, dst->t, dst->r, dst->b,
++            scissor->l, scissor->t, scissor->r, scissor->b);
++
++        e->dst.x = clip.l;
++        e->dst.y = clip.t;
++        e->dst.xres = clip.r - clip.l;
++        e->dst.yres = clip.b - clip.t;
++
++        switch (dev->transform) {
++        case COPYBIT_TRANSFORM_ROT_90:
++            e->src.x = clip.t - dst->t + src->t;
++            e->src.y = dst->r - clip.r + src->l;
++            w = clip.b - clip.t;
++            h = clip.r - clip.l;
++            W = dst->b - dst->t;
++            H = dst->r - dst->l;
++            break;
++        case COPYBIT_TRANSFORM_ROT_180:
++            e->src.x = dst->r - clip.r + src->l;
++            e->src.y = dst->b - clip.b + src->t;
++            w = clip.r - clip.l;
++            h = clip.b - clip.t;
++            W = dst->r - dst->l;
++            H = dst->b - dst->t;
++            break;
++        case COPYBIT_TRANSFORM_ROT_270:
++            e->src.x = dst->b - clip.b + src->t;
++            e->src.y = clip.l - dst->l + src->l;
++            w = clip.b - clip.t;
++            h = clip.r - clip.l;
++            W = dst->b - dst->t;
++            H = dst->r - dst->l;
++            break;
++        default:
++            e->src.x = clip.l - dst->l + src->l;
++            e->src.y = clip.t - dst->t + src->t;
++            w = clip.r - clip.l;
++            h = clip.b - clip.t;
++            W = dst->r - dst->l;
++            H = dst->b - dst->t;
++    }
++
++    MULDIV(&e->src.x, &w, src->r - src->l, W);
++    MULDIV(&e->src.y, &h, src->b - src->t, H);
++    e->src.xres = w;
++    e->src.yres = h;
++
++//	if (dev->transform & COPYBIT_TRANSFORM_FLIP_V)
++//		e->src.t = e->src.h - (e->src.t + h);
++
++//	if (dev->transform & COPYBIT_TRANSFORM_FLIP_H)
++//		e->src.l = e->src.w  - (e->src.l + w);
++
++    /*LOGI("BLIT (%d,%d) (%d,%d) => (%d,%d) (%d,%d)",
++        e->src.x, e->src.y, e->src.xres, e->src.yres,
++        e->dst.x, e->dst.y, e->dst.xres, e->dst.yres);*/
++}
++
++/*****************************************************************************/
++
++/** Set a parameter to value */
++static int set_parameter_copybit(
++        struct copybit_device_t *dev,
++        int name,
++        int value) 
++{
++    struct copybit_context_t* ctx = (struct copybit_context_t*)dev;
++    int status = 0;
++    if (ctx) {
++        switch(name) {
++        case COPYBIT_ROTATION_DEG:
++            switch (value) {
++            case 0:
++                ctx->transform = 0;
++                break;
++            case 90:
++                ctx->transform = COPYBIT_TRANSFORM_ROT_90;
++                break;
++            case 180:
++                ctx->transform = COPYBIT_TRANSFORM_ROT_180;
++                break;
++            case 270:
++                ctx->transform = COPYBIT_TRANSFORM_ROT_270;
++                break;
++            default:
++                LOGE("Invalid value for COPYBIT_ROTATION_DEG");
++                status = -EINVAL;
++                break;
++            }
++            ctx->rotate = value;
++            break;
++        case COPYBIT_PLANE_ALPHA:
++            if (value < 0)      value = 0;
++            if (value >= 256)   value = 255;
++            ctx->alpha = value;
++            break;
++        case COPYBIT_DITHER:
++            if (value)
++                LOGW("Got unsupported COPYBIT_DITHER %d", value);
++            break;
++        case COPYBIT_BLUR:
++            LOGW("Got unsupported COPYBIT_BLUR %d", value);
++            break;
++        case COPYBIT_TRANSFORM:
++            switch (value) {
++            case 0:
++                ctx->rotate = 0;
++                break;
++            case COPYBIT_TRANSFORM_ROT_90:
++                ctx->rotate = 90;
++                break;
++            case COPYBIT_TRANSFORM_ROT_180:
++                ctx->rotate = 180;
++                break;
++            case COPYBIT_TRANSFORM_ROT_270:
++                ctx->rotate = 270;
++                break;
++            case COPYBIT_TRANSFORM_FLIP_H:
++                LOGW("Got unsupported FLIP_H value for COPYBIT_TRANSFORM");
++                break;
++            case COPYBIT_TRANSFORM_FLIP_V:
++                LOGW("Got unsupported FLIP_V value for COPYBIT_TRANSFORM");
++                break;
++            default:
++                LOGE("Invalid value for COPYBIT_TRANSFORM");
++                return -EINVAL;
++            }
++            ctx->transform = value;
++            break;
++        default:
++            return -EINVAL;
++        }
++    } else {
++        status = -EINVAL;
++    }
++    return status;
++}
++
++/** Get a static info value */
++static int get(struct copybit_device_t *dev, int name) 
++{
++    struct copybit_context_t* ctx = (struct copybit_context_t*)dev;
++    int value;
++    if (ctx) {
++        switch(name) {
++        case COPYBIT_MINIFICATION_LIMIT:
++            value = MAX_SCALE_FACTOR;
++            break;
++        case COPYBIT_MAGNIFICATION_LIMIT:
++            value = MAX_SCALE_FACTOR;
++            break;
++        case COPYBIT_SCALING_FRAC_BITS:
++            value = 32;
++            break;
++        case COPYBIT_ROTATION_STEP_DEG:
++            value = 90;
++            break;
++        default:
++            value = -EINVAL;
++        }
++    } else {
++        value = -EINVAL;
++    }
++    return value;
++}
++
++static int blit_copybit(
++        struct copybit_device_t *dev,
++        struct copybit_image_t const *dst,
++        struct copybit_image_t const *src,
++        struct copybit_region_t const *region);
++
++/** do a stretch blit type operation */
++static int stretch_copybit(
++        struct copybit_device_t *dev,
++        struct copybit_image_t const *dst,
++        struct copybit_image_t const *src,
++        struct copybit_rect_t const *dst_rect,
++        struct copybit_rect_t const *src_rect,
++        struct copybit_region_t const *region) 
++{
++    struct copybit_context_t* ctx = (struct copybit_context_t*)dev;
++    if (!ctx)
++        return -EINVAL;
++
++    if (src_rect->l < 0 || src_rect->r > src->w ||
++        src_rect->t < 0 || src_rect->b > src->h) {
++        // this is always invalid
++        return -EINVAL;
++    }
++
++    if (src->w > MAX_DIMENSION || src->h > MAX_DIMENSION)
++        return -EINVAL;
++
++    if (dst->w > MAX_DIMENSION || dst->h > MAX_DIMENSION)
++        return -EINVAL;
++
++    if (get_bpp(dst->format) != get_bpp(src->format))
++    {
++        LOGW("stretch_copybit for format %d->%d", src->format, dst->format);
++        return -EINVAL;
++    }
++
++    int status = 0;
++    struct geio_blit_req req;
++    memset(&req, 0, sizeof(req));
++
++    if (set_image(&req.dst, dst))
++    {
++        LOGW("stretch_copybit failed set_image dst");
++        return -EINVAL;
++    }
++
++    if (set_image(&req.src, src))
++    {
++        LOGW("stretch_copybit failed set_image src");
++        return -EINVAL;
++    }
++
++    req.rotate = ctx->rotate;
++
++    LOGD_IF(DEBUG_COPYBIT, "SRC %dx%d fmt %d, DST %dx%d fmt %d",
++        src->w, src->h, src->format, dst->w, dst->h, dst->format);
++
++    struct copybit_rect_t clip;
++    while (region->next(region, &clip)) {
++        set_rects(ctx, &req, dst_rect, src_rect, &clip);
++        status = ioctl(ctx->fd, GEIO_STRETCH_BLIT, &req);
++
++        if (status < 0) {
++            LOGE("GEIO_STRETCH_BLIT failed (%s)", strerror(errno));
++            return -errno;
++        }
++        LOGD_IF(DEBUG_COPYBIT, "SRC %dx%d fmt %d, DST %dx%d fmt %d",
++                src->w, src->h, src->format, dst->w, dst->h, dst->format);
++    }
++
++    unsigned int dummy;
++    if (ioctl(ctx->fd, FBIO_WAITFORVSYNC, &dummy) == -1) {
++            LOGE("FBIO_WAITFORVSYNC failed");
++            return -errno;
++    }
++    return 0;
++}
++
++/** Perform a blit type operation */
++static int blit_copybit(
++        struct copybit_device_t *dev,
++        struct copybit_image_t const *dst,
++        struct copybit_image_t const *src,
++        struct copybit_region_t const *region) 
++{
++    struct copybit_rect_t dr = { 0, 0, dst->w, dst->h };
++    struct copybit_rect_t sr = { 0, 0, src->w, src->h };
++    return stretch_copybit(dev, dst, src, &dr, &sr, region);
++}
++/*****************************************************************************/
++
++/** Close the copybit device */
++static int close_copybit(struct hw_device_t *dev) 
++{
++    struct copybit_context_t* ctx = (struct copybit_context_t*)dev;
++    if (ctx) {
++        close(ctx->fd);
++        free(ctx);
++    }
++    return 0;
++}
++
++/** Open a new instance of a copybit device using name */
++static int open_copybit(const struct hw_module_t* module, const char* name,
++        struct hw_device_t** device)
++{
++    int status = -EINVAL;
++    copybit_context_t *ctx;
++    ctx = (copybit_context_t *)malloc(sizeof(copybit_context_t));
++    memset(ctx, 0, sizeof(*ctx));
++
++    ctx->device.common.tag = HARDWARE_DEVICE_TAG;
++    ctx->device.common.version = 1;
++    ctx->device.common.module = const_cast<hw_module_t*>(module);
++    ctx->device.common.close = close_copybit;
++    ctx->device.set_parameter = set_parameter_copybit;
++    ctx->device.get = get;
++    ctx->device.blit = blit_copybit;
++    ctx->device.stretch = stretch_copybit;
++    ctx->alpha = 255;
++    ctx->transform = 0;
++    ctx->rotate = 0;
++    ctx->fd = open("/dev/graphics/fb0", O_RDWR, 0);
++
++    if (ctx->fd < 0) {
++        status = errno;
++        LOGE("Error opening frame buffer errno=%d (%s)",
++             status, strerror(status));
++        status = -status;
++    } else {
++        struct fb_fix_screeninfo finfo;
++        if (ioctl(ctx->fd, FBIOGET_FSCREENINFO, &finfo) == 0) {
++            LOGD_IF(DEBUG_COPYBIT, "Opened framebuffer");
++            status = 0;
++        } else {
++            LOGE("Error executing ioctl for screen info");
++            status = -errno;
++        }
++    }
++
++    if (status == 0) {
++        *device = &ctx->device.common;
++    } else {
++        close_copybit(&ctx->device.common);
++    }
++    return status;
++}
+diff --git a/modules/gralloc/allocator.cpp b/modules/gralloc/allocator.cpp
+new file mode 100644
+index 0000000..4dad6a1
+--- /dev/null
++++ b/modules/gralloc/allocator.cpp
+@@ -0,0 +1,170 @@
++/*
++ * Copyright (C) 2009 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#include <cutils/log.h>
++
++#include "allocator.h"
++
++
++// align all the memory blocks on a cache-line boundary
++const int SimpleBestFitAllocator::kMemoryAlign = 32;
++
++SimpleBestFitAllocator::SimpleBestFitAllocator()
++    : mHeapSize(0)
++{
++}
++
++SimpleBestFitAllocator::SimpleBestFitAllocator(size_t size)
++    : mHeapSize(0)
++{
++    setSize(size);
++}
++
++SimpleBestFitAllocator::~SimpleBestFitAllocator()
++{
++    while(!mList.isEmpty()) {
++        delete mList.remove(mList.head());
++    }
++}
++
++ssize_t SimpleBestFitAllocator::setSize(size_t size)
++{
++    Locker::Autolock _l(mLock);
++    if (mHeapSize != 0) return -EINVAL;
++    size_t pagesize = getpagesize();
++    mHeapSize = ((size + pagesize-1) & ~(pagesize-1));
++    chunk_t* node = new chunk_t(0, mHeapSize / kMemoryAlign);
++    mList.insertHead(node);
++    return size;
++}
++    
++    
++size_t SimpleBestFitAllocator::size() const
++{
++    return mHeapSize;
++}
++
++ssize_t SimpleBestFitAllocator::allocate(size_t size, uint32_t flags)
++{
++    Locker::Autolock _l(mLock);
++    if (mHeapSize == 0) return -EINVAL;
++    ssize_t offset = alloc(size, flags);
++    return offset;
++}
++
++ssize_t SimpleBestFitAllocator::deallocate(size_t offset)
++{
++    Locker::Autolock _l(mLock);
++    if (mHeapSize == 0) return -EINVAL;
++    chunk_t const * const freed = dealloc(offset);
++    if (freed) {
++        return 0;
++    }
++    return -ENOENT;
++}
++
++ssize_t SimpleBestFitAllocator::alloc(size_t size, uint32_t flags)
++{
++    if (size == 0) {
++        return 0;
++    }
++    size = (size + kMemoryAlign-1) / kMemoryAlign;
++    chunk_t* free_chunk = 0;
++    chunk_t* cur = mList.head();
++
++    size_t pagesize = getpagesize();
++    while (cur) {
++        int extra = ( -cur->start & ((pagesize/kMemoryAlign)-1) ) ;
++
++        // best fit
++        if (cur->free && (cur->size >= (size+extra))) {
++            if ((!free_chunk) || (cur->size < free_chunk->size)) {
++                free_chunk = cur;
++            }
++            if (cur->size == size) {
++                break;
++            }
++        }
++        cur = cur->next;
++    }
++
++    if (free_chunk) {
++        const size_t free_size = free_chunk->size;
++        free_chunk->free = 0;
++        free_chunk->size = size;
++        if (free_size > size) {
++            int extra = ( -free_chunk->start & ((pagesize/kMemoryAlign)-1) ) ;
++            if (extra) {
++                chunk_t* split = new chunk_t(free_chunk->start, extra);
++                free_chunk->start += extra;
++                mList.insertBefore(free_chunk, split);
++            }
++
++            LOGE_IF(((free_chunk->start*kMemoryAlign)&(pagesize-1)),
++                    "page is not aligned!!!");
++
++            const ssize_t tail_free = free_size - (size+extra);
++            if (tail_free > 0) {
++                chunk_t* split = new chunk_t(
++                        free_chunk->start + free_chunk->size, tail_free);
++                mList.insertAfter(free_chunk, split);
++            }
++        }
++        return (free_chunk->start)*kMemoryAlign;
++    }
++    return -ENOMEM;
++}
++
++SimpleBestFitAllocator::chunk_t* SimpleBestFitAllocator::dealloc(size_t start)
++{
++    start = start / kMemoryAlign;
++    chunk_t* cur = mList.head();
++    while (cur) {
++        if (cur->start == start) {
++            LOG_FATAL_IF(cur->free,
++                "block at offset 0x%08lX of size 0x%08lX already freed",
++                cur->start*kMemoryAlign, cur->size*kMemoryAlign);
++
++            // merge freed blocks together
++            chunk_t* freed = cur;
++            cur->free = 1;
++            do {
++                chunk_t* const p = cur->prev;
++                chunk_t* const n = cur->next;
++                if (p && (p->free || !cur->size)) {
++                    freed = p;
++                    p->size += cur->size;
++                    mList.remove(cur);
++                    delete cur;
++                }
++                cur = n;
++            } while (cur && cur->free);
++
++            #ifndef NDEBUG
++                if (!freed->free) {
++                    dump_l("dealloc (!freed->free)");
++                }
++            #endif
++            LOG_FATAL_IF(!freed->free,
++                "freed block at offset 0x%08lX of size 0x%08lX is not free!",
++                freed->start * kMemoryAlign, freed->size * kMemoryAlign);
++
++            return freed;
++        }
++        cur = cur->next;
++    }
++    return 0;
++}
+diff --git a/modules/gralloc/allocator.h b/modules/gralloc/allocator.h
+new file mode 100644
+index 0000000..b0d89e9
+--- /dev/null
++++ b/modules/gralloc/allocator.h
+@@ -0,0 +1,129 @@
++/*
++ * Copyright (C) 2009 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++
++#ifndef GRALLOC_ALLOCATOR_H_
++#define GRALLOC_ALLOCATOR_H_
++
++#include <stdint.h>
++#include <sys/types.h>
++
++#include "gr.h"
++
++// ----------------------------------------------------------------------------
++
++/*
++ * A simple templatized doubly linked-list implementation
++ */
++
++template <typename NODE>
++class LinkedList
++{
++    NODE*  mFirst;
++    NODE*  mLast;
++
++public:
++                LinkedList() : mFirst(0), mLast(0) { }
++    bool        isEmpty() const { return mFirst == 0; }
++    NODE const* head() const { return mFirst; }
++    NODE*       head() { return mFirst; }
++    NODE const* tail() const { return mLast; }
++    NODE*       tail() { return mLast; }
++
++    void insertAfter(NODE* node, NODE* newNode) {
++        newNode->prev = node;
++        newNode->next = node->next;
++        if (node->next == 0) mLast = newNode;
++        else                 node->next->prev = newNode;
++        node->next = newNode;
++    }
++
++    void insertBefore(NODE* node, NODE* newNode) {
++         newNode->prev = node->prev;
++         newNode->next = node;
++         if (node->prev == 0)   mFirst = newNode;
++         else                   node->prev->next = newNode;
++         node->prev = newNode;
++    }
++
++    void insertHead(NODE* newNode) {
++        if (mFirst == 0) {
++            mFirst = mLast = newNode;
++            newNode->prev = newNode->next = 0;
++        } else {
++            newNode->prev = 0;
++            newNode->next = mFirst;
++            mFirst->prev = newNode;
++            mFirst = newNode;
++        }
++    }
++    
++    void insertTail(NODE* newNode) {
++        if (mLast == 0) {
++            insertHead(newNode);
++        } else {
++            newNode->prev = mLast;
++            newNode->next = 0;
++            mLast->next = newNode;
++            mLast = newNode;
++        }
++    }
++
++    NODE* remove(NODE* node) {
++        if (node->prev == 0)    mFirst = node->next;
++        else                    node->prev->next = node->next;
++        if (node->next == 0)    mLast = node->prev;
++        else                    node->next->prev = node->prev;
++        return node;
++    }
++};
++
++class SimpleBestFitAllocator
++{
++public:
++
++    SimpleBestFitAllocator();
++    SimpleBestFitAllocator(size_t size);
++    ~SimpleBestFitAllocator();
++
++    ssize_t     setSize(size_t size);
++
++    ssize_t     allocate(size_t size, uint32_t flags = 0);
++    ssize_t     deallocate(size_t offset);
++    size_t      size() const;
++
++private:
++    struct chunk_t {
++        chunk_t(size_t start, size_t size) 
++            : start(start), size(size), free(1), prev(0), next(0) {
++        }
++        size_t              start;
++        size_t              size : 28;
++        int                 free : 4;
++        mutable chunk_t*    prev;
++        mutable chunk_t*    next;
++    };
++
++    ssize_t  alloc(size_t size, uint32_t flags);
++    chunk_t* dealloc(size_t start);
++
++    static const int    kMemoryAlign;
++    mutable Locker      mLock;
++    LinkedList<chunk_t> mList;
++    size_t              mHeapSize;
++};
++
++#endif /* GRALLOC_ALLOCATOR_H_ */
