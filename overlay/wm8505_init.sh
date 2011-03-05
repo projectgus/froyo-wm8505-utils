@@ -54,7 +54,7 @@ sysctl -w vm.swappiness=40
 
 
 # *** increase free contig memory
-# (the rt3070 driver requires lots of contiguous 8kb buffers, seems to barf
+# (the rt3070 driver requires lots of 8kb physical chunks for DMA buffers, seems to barf
 # using default memory allocator tuning.)
 echo 2048 > /proc/sys/vm/min_free_kbytes
 echo 4 > /proc/sys/vm/min_free_order_shift
@@ -64,6 +64,7 @@ SETTINGSDB=/data/data/com.android.providers.settings/databases/settings.db
 while ! [ -e $SETTINGSDB ]; do
 	 sleep 1; 
 done
+sleep 10
 echo 'insert into system ("name", "value") values ("wifi_sleep_policy", "2");' \
 	 | sqlite3 $SETTINGSDB
 
