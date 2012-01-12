@@ -1,2 +1,0 @@
-touchpad_init: touchpad_init.c
-	arm-linux-gnueabi-gcc -Wall -std=c99 -static -o touchpad_init touchpad_init.c
