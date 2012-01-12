@@ -1,9 +1,0 @@
-You'll need to apply these patches manually, there's no automated
-script. Go to each project dir in the AOSP tree and patch -p1 <
-xxx.patch
-
-You'll also need the wifi AWEXT driver patch from 
-http://blog.linuxconsulting.ro/2010/04/porting-wifi-drivers-to-android.html
-
-(direct link http://www.linuxconsulting.ro/android/patches/android_wext_emulation_driver_awext.patch )
-
